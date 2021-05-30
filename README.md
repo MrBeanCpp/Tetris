@@ -1,5 +1,6 @@
 # Tetris
 暗黑风格俄罗斯方块(Tetris) with C++ EasyX  
+编译环境：VS2019
 
 ![image](https://github.com/MrBeanCpp/Tetris/blob/main/show.jpg)  
 
