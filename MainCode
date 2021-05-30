@@ -1,0 +1,368 @@
+#pragma warning(disable:4996)
+#pragma warning(disable:6385)
+#pragma warning(disable:6386)
+#pragma comment(lib,"user32.lib")
+#include<iostream>
+#include<stdlib.h>
+#include<graphics.h>
+#include<string.h>
+#include<time.h>
+#include<string>
+#include<fstream>
+#define CUBE_W 35
+#define WIDTH (CUBE_W*16)
+#define HEIGHT (CUBE_W*22)
+#define GetKey(X) (GetAsyncKeyState(X) & 0x8000)
+using namespace std;
+int Width, Height;
+struct Translator {
+	Translator(const char*p):cmd(p){}
+	bool get(int& x, int& y) {
+		if (*cmd == '\0')return false;
+		if (*cmd == ',')cmd++;
+		while (*cmd != ',' && *cmd != '\0') {
+			x = *cmd == 'R' ? x + 1 : (*cmd == 'L' ? x - 1 : x);
+			y = *cmd == 'D' ? y + 1 : (*cmd == 'U' ? y - 1 : y);
+			cmd++;
+		}
+		return true;
+	}
+private:
+	const char* cmd;
+};
+struct Game {
+	Game():tick(0),score(0),best(0),floor(0),Next_n(-1) {
+		srand(time(NULL));
+		setbkcolor(RGB(35, 35, 35));
+		setbkmode(TRANSPARENT);
+		memset(map, '\0', sizeof(map));
+		readSaveFile();
+		Random();
+		setANTIALIASED();
+		drawBG();
+	}
+	void moveRight(void) {
+		if (inCollision(n, rotate, x + 1, y))return;
+		x++;
+		drawBG();
+		FlushBatchDraw();
+	}
+	void moveLeft(void) {
+		if (inCollision(n, rotate, x - 1, y))return;
+		x--;
+		drawBG();
+		FlushBatchDraw();
+	}
+	void moveDown(void) {
+		if (inCollision(n, rotate, x, y + 1))return;
+		y++;
+		drawBG();
+		FlushBatchDraw();
+	}
+	void Rotate(void) {
+		static const POINT TestPos[] = { {0,0}, {-1,0},{1,0},{1,1},{-1,1} };
+		for(POINT p:TestPos)
+			if (!inCollision(n, rotate + 1, x + p.x, y + p.y)) {
+				++rotate %= 4, x += p.x, y += p.y;
+				break;
+			}
+		/*if (inCollision(n, rotate + 1, x, y))return;
+		++rotate %= 4;*/
+		drawBG();
+		FlushBatchDraw();
+	}
+	void fastDown(void) {
+		while (!inCollision(n, rotate, x, y + 1)) {
+			y++;
+			drawBG();
+			FlushBatchDraw();
+			Sleep(2);
+		}
+		Beep(250, 80);
+	}
+	void update(void) {
+		if (++tick %= max(Speed - floor/2, 25))return;
+		y++;
+		if (inCollision())
+			y--, enSolid(), Random(), score += 10;
+		clearBlock();
+		best = max(best, score);
+		writeSaveFile();
+		drawBG();
+	}
+	bool isfailed(void) {
+		return isFailed;
+	}
+private:
+	const int Cube_W = CUBE_W;
+	static const int W = 10, H = 20;
+	const POINT Offset = { 10,(Height - Cube_W * H) / 2 };
+	const int Speed = 250;
+
+	static int n, rotate, x, y;
+	int Next_n, Next_rotate, Next_x, Next_y;
+	int tick;
+	int score, best, floor;
+
+	const string savePath = "C:\\Users\\18134\\source\\repos\\Tetris v2.0\\Tetris-save.txt";//
+
+	static const char WALL = '#';
+	char map[H][W];//逻辑网格
+	bool isFailed = false;
+
+	const char* block[7][4] = {
+		{"R,RR,L","U,D,DD","R,RR,L","U,D,DD"},
+		{"R,L,LU","U,UR,D","R,RD,L","U,D,DL"},
+		{"L,R,RU","U,D,DR","R,L,LD","U,D,UL"},
+		{"U,R,UR","U,R,UR","U,R,UR","U,R,UR"},
+		{"U,L,UR","U,R,RD","R,D,DL","L,LU,D"},
+		{"U,L,R","U,R,D","L,R,D","U,D,L"},
+		{"U,UL,R","R,RU,D","L,D,DR","U,L,LD"}
+	};
+
+	void drawBG(void) {
+		cleardevice();
+		setlinestyle(PS_SOLID, 2);
+		setlinecolor(RGB(80, 80, 80));
+		for (int i = 0; i <= H; i++)
+			line(Offset.x - 1, Offset.y + i * Cube_W, Offset.x + W * Cube_W, Offset.y + i * Cube_W);
+		for (int i = 0; i <= W; i++)
+			line(Offset.x + i * Cube_W, Offset.y - 1, Offset.x + i * Cube_W, Offset.y + H * Cube_W);
+
+		for (int i = 0; i < H; i++)
+			for (int j = 0; j < W; j++)
+				if (map[i][j] == WALL)
+					drawCube(j, i);
+
+		drawUI();
+		if(!isFailed)
+			drawBlock();
+	}
+	void drawCube(int x, int y) {//相对逻辑坐标
+		setlinestyle(PS_SOLID, 1);
+		setfillcolor(RGB(220, 220, 220));
+		fillrectangle(Offset.x + x * Cube_W, Offset.y + y * Cube_W, Offset.x + (x + 1) * Cube_W - 1, Offset.y + (y + 1) * Cube_W - 1);
+	}
+	void drawBlock(int n = n, int rotate = rotate, int x = x, int y = y) {
+		rotate %= 4;
+		int X = x, Y = y;
+		if (Y >= 0 && Y < H)
+			drawCube(X, Y);
+		Translator trans(block[n][rotate]);
+		while (X = x, Y = y, trans.get(X, Y)) {
+			if (Y >= 0 && Y < H)
+				drawCube(X, Y);
+		}
+	}
+	void enSolid(void) {
+		rotate %= 4;
+		int X = x, Y = y;
+		if (inRange(X, Y))map[Y][X] = WALL;
+		Translator trans(block[n][rotate]);
+		while (X = x, Y = y, trans.get(X, Y)) {
+			if (Y < 0) {
+				isFailed = true;
+				continue;
+			}
+			if (inRange(X, Y))map[Y][X] = WALL;
+		}
+	}
+	bool inCollision(int n = n, int rotate = rotate, int x = x, int y = y) {
+		rotate %= 4;
+		int X = x, Y = y;
+		if (map[Y][X] == WALL || X < 0 || X >= W || Y >= H)return true;
+		Translator trans(block[n][rotate]);
+		while (X = x, Y = y, trans.get(X, Y))
+			if (map[Y][X] == WALL || X < 0 || X >= W || Y >= H)return true;
+		return false;
+	}
+	void random(int& n, int& rotate, int& x, int& y) {
+		y = -1;
+		do
+			x = rand() % H, rotate = rand() % 4, n = rand() % 7;
+		while (inCollision(n,rotate,x,y));
+	}
+	void Random(void) {
+		if (Next_n == -1)
+			random(n, rotate, x, y), random(Next_n, Next_rotate, Next_x, Next_y);
+		else {
+			n = Next_n;
+			rotate = Next_rotate;
+			x = Next_x;
+			y = Next_y;
+			random(Next_n, Next_rotate, Next_x, Next_y);
+		}
+	}
+	void clearBlock(void) {
+		static auto isFull = [&](int i)->bool {
+			for (int j = 0; j < W; j++)
+				if (map[i][j] != WALL)
+					return false;
+			return true;
+		};
+
+		int Floor = 0;
+		for (int i = H - 1; i > 0; i--) {
+			if (!isFull(i))continue;
+			for (int x = 0; x < W; x++)
+				for (int y = i; y > 0 ; y--)
+					map[y][x] = map[y - 1][x];
+			Floor++;
+			i++;
+			drawBG();
+			FlushBatchDraw();
+			Beep(400, 35);
+		}
+		score += Floor < 3 ? Floor * 100 : (Floor == 3 ? 400 : 800);
+		floor += Floor;
+	}
+	void setANTIALIASED(void) {// 设置输出效果为抗锯齿
+		LOGFONT f;
+		gettextstyle(&f);						// 获取当前字体设置
+		f.lfQuality = ANTIALIASED_QUALITY;		// 设置输出效果为抗锯齿  
+		settextstyle(&f);
+	}
+	void drawUI(void) {
+		settextstyle(28, 0, "微软雅黑");
+		const int Gap = 80;
+		const COLORREF COL_TEXT = RGB(150, 150, 150);
+		const COLORREF COL_NUM = RGB(220, 220, 220);
+
+		settextcolor(COL_TEXT);
+		RECT Score_Text = { Offset.x + W * Cube_W ,10,Width,70 };
+		drawtext("Score", &Score_Text, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		settextcolor(COL_NUM);
+		RECT Score_Num = { Offset.x + W * Cube_W ,Score_Text.bottom - 10,Width,Score_Text.bottom + 20 };
+		drawtext(to_string(score).c_str(), &Score_Num, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+
+		settextcolor(COL_TEXT);
+		RECT Best_Text = { Offset.x + W * Cube_W ,Score_Text.bottom + Gap,Width,Score_Text.bottom + Gap + 60 };
+		drawtext("Best", &Best_Text, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		settextcolor(COL_NUM);
+		RECT Best_Num = { Offset.x + W * Cube_W ,Best_Text.bottom - 10,Width,Best_Text.bottom + 20 };
+		drawtext(to_string(best).c_str(), &Best_Num, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+
+		settextcolor(COL_TEXT);
+		RECT Floor_Text = { Offset.x + W * Cube_W ,Best_Text.bottom + Gap,Width,Best_Text.bottom + Gap + 60 };
+		drawtext("Floors", &Floor_Text, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		settextcolor(COL_NUM);
+		RECT Floor_Num = { Offset.x + W * Cube_W ,Floor_Text.bottom - 10,Width,Floor_Text.bottom + 20 };
+		drawtext(to_string(floor).c_str(), &Floor_Num, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+		drawBlock(Next_n, Next_rotate, W + 2, 14);
+	}
+	void readSaveFile(void) {
+		ifstream ifs(savePath);
+		if (!ifs)return;
+		ifs >> best;
+	}
+	void writeSaveFile(void) {
+		ofstream ofs(savePath);
+		if (!ofs)return;
+		ofs << best;
+	}
+	bool inRange(int x,int y) {
+		return x >= 0 && x < W&& y >= 0 && y < H;
+	}
+};
+int Game::n, Game::rotate, Game::x, Game::y;
+void initWinPos_Title(HWND hwnd, string newTitle);
+RECT getTrueClientRect(HWND hwnd);
+void init(int& Width, int& Height);
+void JustButton(const string text);
+int main(void)
+{
+	initgraph(WIDTH, HEIGHT);
+	BeginBatchDraw();
+	init(Width, Height);
+
+	while (true) {
+		Game game;
+		bool free = true;
+		int tick = 0;
+		while (!game.isfailed()) {
+
+			if (GetKey('P'))
+				JustButton("PRESS to CONTINUE");
+
+			++tick %= 50;
+			if (GetKey(VK_RIGHT)) {
+				if (free || !tick)
+					game.moveRight(), free = false, tick = 0;
+			}
+			else if (GetKey(VK_LEFT)) {
+				if (free || !tick)
+					game.moveLeft(), free = false, tick = 0;
+			}
+			else if (GetKey(VK_DOWN)) {
+				if (free || !tick)
+					game.moveDown(), free = false, tick = 0;
+			}
+			else if (GetKey(VK_UP)) {
+				if(free)
+					game.Rotate(), free = false;
+			}
+			else if (GetKey(VK_SPACE)) {
+				if (free)
+					game.fastDown(), free = false;
+			}
+			else
+				free = true;
+
+			game.update();
+			FlushBatchDraw();
+			Sleep(1);
+		}
+		JustButton("-PRESS TO [RESTART]-");
+	}
+
+	return 0;
+}
+void initWinPos_Title(HWND hwnd, string newTitle) {
+	int Screen_W = GetSystemMetrics(SM_CXSCREEN);//Screen_X
+	int Screen_H = GetSystemMetrics(SM_CYSCREEN);//Screen_Y
+	MoveWindow(hwnd, Screen_W / 2 - WIDTH / 2, Screen_H / 2 - HEIGHT / 2, WIDTH, HEIGHT, true);
+	if (newTitle != "")
+		SetWindowTextA(hwnd, newTitle.c_str());
+}
+RECT getTrueClientRect(HWND hwnd) {
+	RECT rect, Crect;
+	GetClientRect(hwnd, &Crect);//获取客户端矩阵（不含标题栏）
+	GetWindowRect(hwnd, &rect);
+	const int offset = ((rect.right - rect.left) - (Crect.right - Crect.left)) / 2;
+	int cap = (rect.bottom - offset - rect.top) - (Crect.bottom - Crect.top);
+	int left, top, right, bottom;
+	left = rect.left + offset;
+	right = rect.right - offset;
+	top = rect.top + cap;
+	bottom = rect.bottom - offset;
+	return { left,top,right,bottom };
+}
+void init(int& Width, int& Height) {
+	HWND hwnd = GetHWnd();//!!
+	initWinPos_Title(hwnd, "Tetris v2.0 [By MrBeanC]");
+	RECT rect = getTrueClientRect(hwnd);
+	Width = rect.right - rect.left;
+	Height = rect.bottom - rect.top;
+}
+void JustButton(const string text) {
+	const int W = 320, H = 70;
+	const int x = Width / 2 - W / 2, y = Height / 2 - H / 2;
+	LOGFONT oldTextStyle;
+	gettextstyle(&oldTextStyle);
+	settextstyle(35, 0, "微软雅黑", 0, 0, 600, 0, 0, 0);
+	setfillcolor(RGB(35, 35, 35));
+	RECT rect = { x, y, x + W, y + H };
+	solidroundrect(rect.left, rect.top, rect.right, rect.bottom, 5, 5);
+	drawtext(text.c_str(), &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+	settextstyle(&oldTextStyle);
+	FlushBatchDraw();
+	Sleep(200);
+	system("pause");
+	Sleep(100);
+}
